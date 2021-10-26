@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"math/big"
 	"net/http"
 	"sort"
 	"strconv"
@@ -153,7 +154,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 
 		// sorting by delegator shares to display rankings
 		sort.Slice(validators[:], func(i, j int) bool {
-			return validators[i].DelegatorShares.RoundInt64() > validators[j].DelegatorShares.RoundInt64()
+			return validators[i].DelegatorShares.BigInt().Cmp(validators[j].DelegatorShares.BigInt()) > 0
 		})
 	}()
 	wg.Add(1)
@@ -250,11 +251,14 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			"moniker": validator.Description.Moniker,
 		}).Set(float64(jailed))
 
+		tokensRatioBig := new(big.Float).Quo(new(big.Float).SetInt(validator.Tokens.BigInt()), new(big.Float).SetFloat64(DenomCoefficient))
+		tokensRatio, _ := tokensRatioBig.Float64()
+
 		validatorsTokensGauge.With(prometheus.Labels{
 			"address": validator.OperatorAddress,
 			"moniker": validator.Description.Moniker,
 			"denom":   Denom,
-		}).Set(float64(validator.Tokens.Int64()) / DenomCoefficient)
+		}).Set(tokensRatio)
 
 		// because cosmos's dec doesn't have .toFloat64() method or whatever and returns everything as int
 		if value, err := strconv.ParseFloat(validator.DelegatorShares.String(), 64); err != nil {
