@@ -163,6 +163,7 @@ Additionally, you can pass a `--config` flag with a path to your config file (I 
 
 In theory, it should work on a Cosmos-based blockchains that expose a gRPC endpoint (for example, Sentinel hub v0.5.0 doesn't expose it, so it won't work with it). In practice, this definitely works with the following blockchains:
 
+- Cudos (with `--bech-prefix cudos --denom acudos`)
 - Persistence (with `--bech-prefix persistence --denom uxprt`)
 - Cosmos (with `--bech-prefix cosmos --denom uatom`). The queries can take a long time though (apparently more than 90 seconds), so adjust the scrape timings and timeouts accordingly.
 - Akash (with `--bech-prefix akash --denom uakt`)
