@@ -15,10 +15,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"google.golang.org/grpc"
 )
 
-func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
+func (s *Server) ValidatorsHandler(w http.ResponseWriter, r *http.Request) {
 	encCfg := simapp.MakeTestEncodingConfig()
 	interfaceRegistry := encCfg.InterfaceRegistry
 
@@ -32,7 +31,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		prometheus.GaugeOpts{
 			Name:        "cosmos_validators_commission",
 			Help:        "Commission of the Cosmos-based blockchain validator",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "moniker"},
 	)
@@ -41,7 +40,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		prometheus.GaugeOpts{
 			Name:        "cosmos_validators_status",
 			Help:        "Status of the Cosmos-based blockchain validator",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "moniker"},
 	)
@@ -50,7 +49,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		prometheus.GaugeOpts{
 			Name:        "cosmos_validators_jailed",
 			Help:        "Jailed status of the Cosmos-based blockchain validator",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "moniker"},
 	)
@@ -59,7 +58,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		prometheus.GaugeOpts{
 			Name:        "cosmos_validators_tokens",
 			Help:        "Tokens of the Cosmos-based blockchain validator",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "moniker", "denom"},
 	)
@@ -68,7 +67,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		prometheus.GaugeOpts{
 			Name:        "cosmos_validators_delegator_shares",
 			Help:        "Delegator shares of the Cosmos-based blockchain validator",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "moniker", "denom"},
 	)
@@ -77,7 +76,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		prometheus.GaugeOpts{
 			Name:        "cosmos_validators_min_self_delegation",
 			Help:        "Self declared minimum self delegation shares of the Cosmos-based blockchain validator",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "moniker", "denom"},
 	)
@@ -86,7 +85,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		prometheus.GaugeOpts{
 			Name:        "cosmos_validators_missed_blocks",
 			Help:        "Missed blocks of the Cosmos-based blockchain validator",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "moniker"},
 	)
@@ -95,7 +94,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		prometheus.GaugeOpts{
 			Name:        "cosmos_validators_rank",
 			Help:        "Rank of the Cosmos-based blockchain validator",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "moniker"},
 	)
@@ -104,7 +103,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		prometheus.GaugeOpts{
 			Name:        "cosmos_validators_active",
 			Help:        "1 if the Cosmos-based blockchain validator is in active set, 0 if no",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "moniker"},
 	)
@@ -131,12 +130,11 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		sublogger.Debug().Msg("Started querying validators")
 		queryStart := time.Now()
 
-		stakingClient := stakingtypes.NewQueryClient(grpcConn)
-		validatorsResponse, err := stakingClient.Validators(
+		validatorsResponse, err := s.Networks[0].staking.Validators(
 			context.Background(),
 			&stakingtypes.QueryValidatorsRequest{
 				Pagination: &querytypes.PageRequest{
-					Limit: Limit,
+					Limit: config.Limit,
 				},
 			},
 		)
@@ -171,12 +169,11 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		sublogger.Debug().Msg("Started querying validators signing infos")
 		queryStart := time.Now()
 
-		slashingClient := slashingtypes.NewQueryClient(grpcConn)
-		signingInfosResponse, err := slashingClient.SigningInfos(
+		signingInfosResponse, err := s.Networks[0].slashing.SigningInfos(
 			context.Background(),
 			&slashingtypes.QuerySigningInfosRequest{
 				Pagination: &querytypes.PageRequest{
-					Limit: Limit,
+					Limit: config.Limit,
 				},
 			},
 		)
@@ -199,8 +196,7 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 		sublogger.Debug().Msg("Started querying staking params")
 		queryStart := time.Now()
 
-		stakingClient := stakingtypes.NewQueryClient(grpcConn)
-		paramsResponse, err := stakingClient.Params(
+		paramsResponse, err := s.Networks[0].staking.Params(
 			context.Background(),
 			&stakingtypes.QueryParamsRequest{},
 		)
@@ -273,8 +269,8 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			validatorsTokensGauge.With(prometheus.Labels{
 				"address": validator.OperatorAddress,
 				"moniker": validator.Description.Moniker,
-				"denom":   Denom,
-			}).Set(value / DenomCoefficient)
+				"denom":   config.Denom,
+			}).Set(value / config.DenomCoefficient)
 		}
 
 		// because cosmos's dec doesn't have .toFloat64() method or whatever and returns everything as int
@@ -287,8 +283,8 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			validatorsDelegatorSharesGauge.With(prometheus.Labels{
 				"address": validator.OperatorAddress,
 				"moniker": validator.Description.Moniker,
-				"denom":   Denom,
-			}).Set(value / DenomCoefficient)
+				"denom":   config.Denom,
+			}).Set(value / config.DenomCoefficient)
 		}
 
 		// validatorsMinSelfDelegationGauge.With(prometheus.Labels{
@@ -306,8 +302,8 @@ func ValidatorsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Cl
 			validatorsMinSelfDelegationGauge.With(prometheus.Labels{
 				"address": validator.OperatorAddress,
 				"moniker": validator.Description.Moniker,
-				"denom":   Denom,
-			}).Set(value / DenomCoefficient)
+				"denom":   config.Denom,
+			}).Set(value / config.DenomCoefficient)
 		}
 
 		err = validator.UnpackInterfaces(interfaceRegistry) // Unpack interfaces, to populate the Anys' cached values

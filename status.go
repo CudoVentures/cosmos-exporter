@@ -14,7 +14,6 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/rs/zerolog"
-	"google.golang.org/grpc"
 )
 
 type StatusResponse struct {
@@ -85,7 +84,7 @@ type ConsensusStateResponse struct {
 	} `json:"result"`
 }
 
-func StatusHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
+func (s *Server) StatusHandler(w http.ResponseWriter, r *http.Request) {
 	requestStart := time.Now()
 
 	sublogger := log.With().
@@ -96,7 +95,7 @@ func StatusHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "block_age",
 			Help:        "Age of the latest block in seconds",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -104,7 +103,7 @@ func StatusHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "missing_validators",
 			Help:        "Number of missing validators for the latest block",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -146,7 +145,7 @@ func StatusHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 func setBlockAge(gaugePtr *prometheus.Gauge, sublogger *zerolog.Logger) error {
 	// /status endpoint
-	resp, err := http.Get(TendermintRPC + "/status")
+	resp, err := http.Get(config.TendermintRPC + "/status")
 	if err != nil {
 		sublogger.Error().
 			Err(err).
@@ -178,7 +177,7 @@ func setBlockAge(gaugePtr *prometheus.Gauge, sublogger *zerolog.Logger) error {
 }
 
 func setMissingValidators(gaugePtr *prometheus.Gauge, sublogger *zerolog.Logger) error {
-	resp, err := http.Get(TendermintRPC + "/consensus_state")
+	resp, err := http.Get(config.TendermintRPC + "/consensus_state")
 	if err != nil {
 		sublogger.Error().
 			Err(err).

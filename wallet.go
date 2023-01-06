@@ -14,12 +14,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"google.golang.org/grpc"
 )
 
-func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
-	network := grpcConn
-
+func (s *Server) WalletHandler(w http.ResponseWriter, r *http.Request) {
 	requestStart := time.Now()
 
 	sublogger := log.With().
@@ -36,24 +33,25 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		return
 	}
 
-	optionalNetwork := r.URL.Query().Get("network")
-	if optionalNetwork != "" {
-		net, err := grpc.Dial(
-			OptionalNetworks[optionalNetwork],
-			grpc.WithInsecure(),
-		)
-		if err != nil {
-			log.Fatal().Err(err).Msg("Could not connect to gRPC node")
-			return
-		}
-		network = net
-	}
+	//TODO: Combine this with normal networks
+	// optionalNetwork := r.URL.Query().Get("network")
+	// if optionalNetwork != "" {
+	// 	net, err := grpc.Dial(
+	// 		OptionalNetworks[optionalNetwork],
+	// 		grpc.WithInsecure(),
+	// 	)
+	// 	if err != nil {
+	// 		log.Fatal().Err(err).Msg("Could not connect to gRPC node")
+	// 		return
+	// 	}
+	// 	network = net
+	// }
 
 	walletBalanceGauge := prometheus.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name:        "cosmos_wallet_balance",
 			Help:        "Balance of the Cosmos-based blockchain wallet",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "denom"},
 	)
@@ -62,7 +60,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_wallet_delegations",
 			Help:        "Delegations of the Cosmos-based blockchain wallet",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "denom", "delegated_to"},
 	)
@@ -71,7 +69,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_wallet_redelegations",
 			Help:        "Redlegations of the Cosmos-based blockchain wallet",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "denom", "redelegated_from", "redelegated_to"},
 	)
@@ -80,7 +78,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_wallet_unbondings",
 			Help:        "Unbondings of the Cosmos-based blockchain wallet",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "denom", "unbonded_from"},
 	)
@@ -89,7 +87,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_wallet_rewards",
 			Help:        "Rewards of the Cosmos-based blockchain wallet",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"address", "denom", "validator_address"},
 	)
@@ -110,8 +108,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			Msg("Started querying balance")
 		queryStart := time.Now()
 
-		bankClient := banktypes.NewQueryClient(network)
-		bankRes, err := bankClient.AllBalances(
+		bankRes, err := s.Networks[0].bank.AllBalances(
 			context.Background(),
 			&banktypes.QueryAllBalancesRequest{Address: myAddress.String()},
 		)
@@ -152,8 +149,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			Msg("Started querying delegations")
 		queryStart := time.Now()
 
-		stakingClient := stakingtypes.NewQueryClient(network)
-		stakingRes, err := stakingClient.DelegatorDelegations(
+		stakingRes, err := s.Networks[0].staking.DelegatorDelegations(
 			context.Background(),
 			&stakingtypes.QueryDelegatorDelegationsRequest{DelegatorAddr: myAddress.String()},
 		)
@@ -180,9 +176,9 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			} else {
 				walletDelegationGauge.With(prometheus.Labels{
 					"address":      address,
-					"denom":        Denom,
+					"denom":        config.Denom,
 					"delegated_to": delegation.Delegation.ValidatorAddress,
-				}).Set(value / DenomCoefficient)
+				}).Set(value / config.DenomCoefficient)
 			}
 		}
 	}()
@@ -195,8 +191,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			Msg("Started querying unbonding delegations")
 		queryStart := time.Now()
 
-		stakingClient := stakingtypes.NewQueryClient(network)
-		stakingRes, err := stakingClient.DelegatorUnbondingDelegations(
+		stakingRes, err := s.Networks[0].staking.DelegatorUnbondingDelegations(
 			context.Background(),
 			&stakingtypes.QueryDelegatorUnbondingDelegationsRequest{DelegatorAddr: myAddress.String()},
 		)
@@ -229,9 +224,9 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 			walletUnbondingsGauge.With(prometheus.Labels{
 				"address":       unbonding.DelegatorAddress,
-				"denom":         Denom, // unbonding does not have denom in response for some reason
+				"denom":         config.Denom, // unbonding does not have denom in response for some reason
 				"unbonded_from": unbonding.ValidatorAddress,
-			}).Set(sum / DenomCoefficient)
+			}).Set(sum / config.DenomCoefficient)
 		}
 	}()
 	wg.Add(1)
@@ -243,8 +238,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			Msg("Started querying redelegations")
 		queryStart := time.Now()
 
-		stakingClient := stakingtypes.NewQueryClient(network)
-		stakingRes, err := stakingClient.Redelegations(
+		stakingRes, err := s.Networks[0].staking.Redelegations(
 			context.Background(),
 			&stakingtypes.QueryRedelegationsRequest{DelegatorAddr: myAddress.String()},
 		)
@@ -277,10 +271,10 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 
 			walletRedelegationGauge.With(prometheus.Labels{
 				"address":          redelegation.Redelegation.DelegatorAddress,
-				"denom":            Denom, // redelegation does not have denom in response for some reason
+				"denom":            config.Denom, // redelegation does not have denom in response for some reason
 				"redelegated_from": redelegation.Redelegation.ValidatorSrcAddress,
 				"redelegated_to":   redelegation.Redelegation.ValidatorDstAddress,
-			}).Set(sum / DenomCoefficient)
+			}).Set(sum / config.DenomCoefficient)
 		}
 	}()
 	wg.Add(1)
@@ -293,8 +287,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			Msg("Started querying rewards")
 		queryStart := time.Now()
 
-		distributionClient := distributiontypes.NewQueryClient(network)
-		distributionRes, err := distributionClient.DelegationTotalRewards(
+		distributionRes, err := s.Networks[0].distribution.DelegationTotalRewards(
 			context.Background(),
 			&distributiontypes.QueryDelegationTotalRewardsRequest{DelegatorAddress: myAddress.String()},
 		)
@@ -321,9 +314,9 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 				} else {
 					walletRewardsGauge.With(prometheus.Labels{
 						"address":           address,
-						"denom":             Denom,
+						"denom":             config.Denom,
 						"validator_address": reward.ValidatorAddress,
-					}).Set(value / DenomCoefficient)
+					}).Set(value / config.DenomCoefficient)
 				}
 			}
 		}

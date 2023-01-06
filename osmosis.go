@@ -16,7 +16,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
-func OsmosisHandler(w http.ResponseWriter, r *http.Request) {
+func (s *Server) OsmosisHandler(w http.ResponseWriter, r *http.Request) {
 	requestStart := time.Now()
 
 	sublogger := log.With().
@@ -65,7 +65,7 @@ func OsmosisHandler(w http.ResponseWriter, r *http.Request) {
 		prometheus.GaugeOpts{
 			Name:        "osmosis_swap_fee",
 			Help:        "",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -73,7 +73,7 @@ func OsmosisHandler(w http.ResponseWriter, r *http.Request) {
 		prometheus.GaugeOpts{
 			Name:        "osmosis_exit_fee",
 			Help:        "",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -81,7 +81,7 @@ func OsmosisHandler(w http.ResponseWriter, r *http.Request) {
 		prometheus.GaugeOpts{
 			Name:        "osmosis_pool_weight",
 			Help:        "",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -89,7 +89,7 @@ func OsmosisHandler(w http.ResponseWriter, r *http.Request) {
 		prometheus.GaugeOpts{
 			Name:        "osmosis_pool_asset_weight",
 			Help:        "",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"denom"},
 	)
@@ -98,7 +98,7 @@ func OsmosisHandler(w http.ResponseWriter, r *http.Request) {
 		prometheus.GaugeOpts{
 			Name:        "osmosis_pool_asset_amount",
 			Help:        "",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"denom"},
 	)
@@ -107,7 +107,7 @@ func OsmosisHandler(w http.ResponseWriter, r *http.Request) {
 		prometheus.GaugeOpts{
 			Name:        "osmosis_total_pool_shares",
 			Help:        "",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 		[]string{"denom"},
 	)

@@ -14,10 +14,9 @@ import (
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"google.golang.org/grpc"
 )
 
-func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
+func (s *Server) ParamsHandler(w http.ResponseWriter, r *http.Request) {
 	requestStart := time.Now()
 
 	sublogger := log.With().
@@ -28,7 +27,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_max_validators",
 			Help:        "Active set length",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -36,7 +35,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_unbonding_time",
 			Help:        "Unbonding time, in seconds",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -44,7 +43,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_blocks_per_year",
 			Help:        "Block per year",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -52,7 +51,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_goal_bonded",
 			Help:        "Goal bonded",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -60,7 +59,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_inflation_min",
 			Help:        "Min inflation",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -68,7 +67,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_inflation_max",
 			Help:        "Max inflation",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -76,7 +75,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_inflation_rate_change",
 			Help:        "Inflation rate change",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -84,7 +83,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_downtail_jail_duration",
 			Help:        "Downtime jail duration, in seconds",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -92,7 +91,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_min_signed_per_window",
 			Help:        "Minimal amount of blocks to sign per window to avoid slashing",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -100,7 +99,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_signed_blocks_window",
 			Help:        "Signed blocks window",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -108,7 +107,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_slash_fraction_double_sign",
 			Help:        "% of tokens to be slashed if double signing",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -116,7 +115,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_slash_fraction_downtime",
 			Help:        "% of tokens to be slashed if downtime",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -124,7 +123,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_base_proposer_reward",
 			Help:        "Base proposer reward",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -132,14 +131,14 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_bonus_proposer_reward",
 			Help:        "Bonus proposer reward",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 	paramsCommunityTaxGauge := prometheus.NewGauge(
 		prometheus.GaugeOpts{
 			Name:        "cosmos_params_community_tax",
 			Help:        "Community tax",
-			ConstLabels: ConstLabels,
+			ConstLabels: config.ConstLabels,
 		},
 	)
 
@@ -166,8 +165,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		sublogger.Debug().Msg("Started querying global staking params")
 		queryStart := time.Now()
 
-		stakingClient := stakingtypes.NewQueryClient(grpcConn)
-		paramsResponse, err := stakingClient.Params(
+		paramsResponse, err := s.Networks[0].staking.Params(
 			context.Background(),
 			&stakingtypes.QueryParamsRequest{},
 		)
@@ -192,8 +190,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		sublogger.Debug().Msg("Started querying global mint params")
 		queryStart := time.Now()
 
-		mintClient := minttypes.NewQueryClient(grpcConn)
-		paramsResponse, err := mintClient.Params(
+		paramsResponse, err := s.Networks[0].mint.Params(
 			context.Background(),
 			&minttypes.QueryParamsRequest{},
 		)
@@ -250,8 +247,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		sublogger.Debug().Msg("Started querying global slashing params")
 		queryStart := time.Now()
 
-		slashingClient := slashingtypes.NewQueryClient(grpcConn)
-		paramsResponse, err := slashingClient.Params(
+		paramsResponse, err := s.Networks[0].slashing.Params(
 			context.Background(),
 			&slashingtypes.QueryParamsRequest{},
 		)
@@ -300,8 +296,7 @@ func ParamsHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 		sublogger.Debug().Msg("Started querying global distribution params")
 		queryStart := time.Now()
 
-		distributionClient := distributiontypes.NewQueryClient(grpcConn)
-		paramsResponse, err := distributionClient.Params(
+		paramsResponse, err := s.Networks[0].distribution.Params(
 			context.Background(),
 			&distributiontypes.QueryParamsRequest{},
 		)
