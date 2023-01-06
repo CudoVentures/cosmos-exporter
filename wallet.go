@@ -7,18 +7,19 @@ import (
 	"sync"
 	"time"
 
-	"github.com/google/uuid"
-	"github.com/prometheus/client_golang/prometheus"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
-	"google.golang.org/grpc"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
 	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	distributiontypes "github.com/cosmos/cosmos-sdk/x/distribution/types"
 	stakingtypes "github.com/cosmos/cosmos-sdk/x/staking/types"
+	"github.com/google/uuid"
+	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/promhttp"
+	"google.golang.org/grpc"
 )
 
 func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.ClientConn) {
+	network := grpcConn
+
 	requestStart := time.Now()
 
 	sublogger := log.With().
@@ -33,6 +34,19 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			Err(err).
 			Msg("Could not get address")
 		return
+	}
+
+	optionalNetwork := r.URL.Query().Get("network")
+	if optionalNetwork != "" {
+		net, err := grpc.Dial(
+			OptionalNetworks[optionalNetwork],
+			grpc.WithInsecure(),
+		)
+		if err != nil {
+			log.Fatal().Err(err).Msg("Could not connect to gRPC node")
+			return
+		}
+		network = net
 	}
 
 	walletBalanceGauge := prometheus.NewGaugeVec(
@@ -96,12 +110,11 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			Msg("Started querying balance")
 		queryStart := time.Now()
 
-		bankClient := banktypes.NewQueryClient(grpcConn)
+		bankClient := banktypes.NewQueryClient(network)
 		bankRes, err := bankClient.AllBalances(
 			context.Background(),
 			&banktypes.QueryAllBalancesRequest{Address: myAddress.String()},
 		)
-
 		if err != nil {
 			sublogger.Error().
 				Str("address", address).
@@ -125,8 +138,8 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			} else {
 				walletBalanceGauge.With(prometheus.Labels{
 					"address": address,
-					"denom":  Denom,
-				}).Set(value / DenomCoefficient)
+					"denom":   balance.Denom,
+				}).Set(value)
 			}
 		}
 	}()
@@ -139,12 +152,11 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			Msg("Started querying delegations")
 		queryStart := time.Now()
 
-		stakingClient := stakingtypes.NewQueryClient(grpcConn)
+		stakingClient := stakingtypes.NewQueryClient(network)
 		stakingRes, err := stakingClient.DelegatorDelegations(
 			context.Background(),
 			&stakingtypes.QueryDelegatorDelegationsRequest{DelegatorAddr: myAddress.String()},
 		)
-
 		if err != nil {
 			sublogger.Error().
 				Str("address", address).
@@ -183,12 +195,11 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			Msg("Started querying unbonding delegations")
 		queryStart := time.Now()
 
-		stakingClient := stakingtypes.NewQueryClient(grpcConn)
+		stakingClient := stakingtypes.NewQueryClient(network)
 		stakingRes, err := stakingClient.DelegatorUnbondingDelegations(
 			context.Background(),
 			&stakingtypes.QueryDelegatorUnbondingDelegationsRequest{DelegatorAddr: myAddress.String()},
 		)
-
 		if err != nil {
 			sublogger.Error().
 				Str("address", address).
@@ -232,12 +243,11 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			Msg("Started querying redelegations")
 		queryStart := time.Now()
 
-		stakingClient := stakingtypes.NewQueryClient(grpcConn)
+		stakingClient := stakingtypes.NewQueryClient(network)
 		stakingRes, err := stakingClient.Redelegations(
 			context.Background(),
 			&stakingtypes.QueryRedelegationsRequest{DelegatorAddr: myAddress.String()},
 		)
-
 		if err != nil {
 			sublogger.Error().
 				Str("address", address).
@@ -283,7 +293,7 @@ func WalletHandler(w http.ResponseWriter, r *http.Request, grpcConn *grpc.Client
 			Msg("Started querying rewards")
 		queryStart := time.Now()
 
-		distributionClient := distributiontypes.NewQueryClient(grpcConn)
+		distributionClient := distributiontypes.NewQueryClient(network)
 		distributionRes, err := distributionClient.DelegationTotalRewards(
 			context.Background(),
 			&distributiontypes.QueryDelegationTotalRewardsRequest{DelegatorAddress: myAddress.String()},
