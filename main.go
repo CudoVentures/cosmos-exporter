@@ -7,29 +7,30 @@ import (
 	"net/http"
 	"os"
 
-	"google.golang.org/grpc"
-
 	sdk "github.com/cosmos/cosmos-sdk/types"
-	tmrpc "github.com/tendermint/tendermint/rpc/client/http"
-
+	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
 	"github.com/rs/zerolog"
-
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
-
-	banktypes "github.com/cosmos/cosmos-sdk/x/bank/types"
+	tmrpc "github.com/tendermint/tendermint/rpc/client/http"
+	"google.golang.org/grpc"
 )
 
 var (
 	ConfigPath string
 
-	Denom         string
-	ListenAddress string
-	NodeAddress   string
-	TendermintRpc string
-	LogLevel      string
-	Limit         uint64
+	Denom              string
+	ListenAddress      string
+	NodeAddress        string
+	TendermintRPC      string
+	OsmosisAPI         string
+	EthRPC             string
+	ethTokenContract   string
+	ethGravityContract string
+	OptionalNetworks   map[string]string
+	LogLevel           string
+	Limit              uint64
 
 	Prefix                    string
 	AccountPrefix             string
@@ -39,16 +40,18 @@ var (
 	ConsensusNodePrefix       string
 	ConsensusNodePubkeyPrefix string
 
-	ChainId          string
+	ChainID          string
 	ConstLabels      map[string]string
 	DenomCoefficient float64
+
+	TokenPrices []string
 )
 
 var log = zerolog.New(zerolog.ConsoleWriter{Out: os.Stdout}).With().Timestamp().Logger()
 
 var rootCmd = &cobra.Command{
-	Use:  "cudos-exporter",
-	Long: "Scrape the data about the validators set, specific validators or wallets in the Cudos network.",
+	Use:  "cosmos-exporter",
+	Long: "Scrape the data about the validators set, specific validators or wallets in the Cosmos network.",
 	PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
 		if ConfigPath == "" {
 			log.Info().Msg("Config file not provided")
@@ -128,7 +131,7 @@ func Execute(cmd *cobra.Command, args []string) {
 	}
 
 	zerolog.SetGlobalLevel(logLevel)
-
+	fmt.Println(OptionalNetworks["osmosis"])
 	log.Info().
 		Str("--bech-account-prefix", AccountPrefix).
 		Str("--bech-account-pubkey-prefix", AccountPubkeyPrefix).
@@ -139,6 +142,9 @@ func Execute(cmd *cobra.Command, args []string) {
 		Str("--denom", Denom).
 		Str("--listen-address", ListenAddress).
 		Str("--node", NodeAddress).
+		Str("--eth-node", EthRPC).
+		Str("--eth-token-contract", ethTokenContract).
+		Str("--eth-gravity-contract", ethGravityContract).
 		Str("--log-level", LogLevel).
 		Msg("Started with following parameters")
 
@@ -146,19 +152,17 @@ func Execute(cmd *cobra.Command, args []string) {
 	config.SetBech32PrefixForAccount(AccountPrefix, AccountPubkeyPrefix)
 	config.SetBech32PrefixForValidator(ValidatorPrefix, ValidatorPubkeyPrefix)
 	config.SetBech32PrefixForConsensusNode(ConsensusNodePrefix, ConsensusNodePubkeyPrefix)
-	config.Seal()
+	// config.Seal()
 
 	grpcConn, err := grpc.Dial(
 		NodeAddress,
 		grpc.WithInsecure(),
 	)
 	if err != nil {
-		panic(err)
+		log.Fatal().Err(err).Msg("Could not connect to gRPC node")
 	}
 
-	defer grpcConn.Close()
-
-	setChainId()
+	setChainID()
 	setDenom(grpcConn)
 
 	http.HandleFunc("/metrics/wallet", func(w http.ResponseWriter, r *http.Request) {
@@ -181,6 +185,22 @@ func Execute(cmd *cobra.Command, args []string) {
 		GeneralHandler(w, r, grpcConn)
 	})
 
+	http.HandleFunc("/metrics/gravity-bridge/wallet", func(w http.ResponseWriter, r *http.Request) {
+		GravityBridgeWalletHandler(w, r, grpcConn)
+	})
+
+	http.HandleFunc("/metrics/gravity-bridge/contract", func(w http.ResponseWriter, r *http.Request) {
+		GravityBridgeContractHandler(w, r, grpcConn)
+	})
+
+	http.HandleFunc("/metrics/status", func(w http.ResponseWriter, r *http.Request) {
+		StatusHandler(w, r, grpcConn)
+	})
+
+	http.HandleFunc("/metrics/osmosis", func(w http.ResponseWriter, r *http.Request) {
+		OsmosisHandler(w, r)
+	})
+
 	log.Info().Str("address", ListenAddress).Msg("Listening")
 	err = http.ListenAndServe(ListenAddress, nil)
 	if err != nil {
@@ -188,8 +208,8 @@ func Execute(cmd *cobra.Command, args []string) {
 	}
 }
 
-func setChainId() {
-	client, err := tmrpc.New(TendermintRpc, "/websocket")
+func setChainID() {
+	client, err := tmrpc.New(TendermintRPC, "/websocket")
 	if err != nil {
 		log.Fatal().Err(err).Msg("Could not create Tendermint client")
 	}
@@ -200,9 +220,9 @@ func setChainId() {
 	}
 
 	log.Info().Str("network", status.NodeInfo.Network).Msg("Got network status from Tendermint")
-	ChainId = status.NodeInfo.Network
+	ChainID = status.NodeInfo.Network
 	ConstLabels = map[string]string{
-		"chain_id": ChainId,
+		"chain_id": ChainID,
 	}
 }
 
@@ -222,9 +242,12 @@ func setDenom(grpcConn *grpc.ClientConn) {
 		context.Background(),
 		&banktypes.QueryDenomsMetadataRequest{},
 	)
-
 	if err != nil {
 		log.Fatal().Err(err).Msg("Error querying denom")
+	}
+
+	if len(denoms.Metadatas) == 0 {
+		log.Fatal().Msg("No denom infos. Try running the binary with --denom and --denom-coefficient to set them manually.")
 	}
 
 	metadata := denoms.Metadatas[0] // always using the first one
@@ -251,17 +274,22 @@ func setDenom(grpcConn *grpc.ClientConn) {
 }
 
 func main() {
-	rootCmd.PersistentFlags().StringVar(&ConfigPath, "config", "", "Config file path")
-	rootCmd.PersistentFlags().StringVar(&Denom, "denom", "acudos", "Cosmos coin denom")
+	rootCmd.PersistentFlags().StringVar(&ConfigPath, "config", "/var/lib/cosmos/config.json", "Config file path")
+	rootCmd.PersistentFlags().StringVar(&Denom, "denom", "", "Cosmos coin denom")
 	rootCmd.PersistentFlags().Float64Var(&DenomCoefficient, "denom-coefficient", 0, "Denom coefficient")
 	rootCmd.PersistentFlags().StringVar(&ListenAddress, "listen-address", ":9300", "The address this exporter would listen on")
 	rootCmd.PersistentFlags().StringVar(&NodeAddress, "node", "localhost:9090", "RPC node address")
 	rootCmd.PersistentFlags().StringVar(&LogLevel, "log-level", "info", "Logging level")
 	rootCmd.PersistentFlags().Uint64Var(&Limit, "limit", 1000, "Pagination limit for gRPC requests")
-	rootCmd.PersistentFlags().StringVar(&TendermintRpc, "tendermint-rpc", "http://localhost:26657", "Tendermint RPC address")
+	rootCmd.PersistentFlags().StringVar(&TendermintRPC, "tendermint-rpc", "http://localhost:26657", "Tendermint RPC address")
+	rootCmd.PersistentFlags().StringToStringVar(&OptionalNetworks, "optional-networks", nil, "Optional grpc networks")
+	rootCmd.PersistentFlags().StringVar(&EthRPC, "eth-rpc", "http://localhost:8545", "Ethereum RPC address")
+	rootCmd.PersistentFlags().StringVar(&ethTokenContract, "eth-token-contract", "", "Ethereum token contract")
+	rootCmd.PersistentFlags().StringVar(&ethGravityContract, "eth-gravity-contract", "", "Ethereum gravity contract")
+	rootCmd.PersistentFlags().StringSliceVar(&TokenPrices, "token-prices", nil, "List of CoinGecko token ids to retrieve current prices")
 
 	// some networks, like Iris, have the different prefixes for address, validator and consensus node
-	rootCmd.PersistentFlags().StringVar(&Prefix, "bech-prefix", "cudos", "Bech32 global prefix")
+	rootCmd.PersistentFlags().StringVar(&Prefix, "bech-prefix", "persistence", "Bech32 global prefix")
 	rootCmd.PersistentFlags().StringVar(&AccountPrefix, "bech-account-prefix", "", "Bech32 account prefix")
 	rootCmd.PersistentFlags().StringVar(&AccountPubkeyPrefix, "bech-account-pubkey-prefix", "", "Bech32 pubkey account prefix")
 	rootCmd.PersistentFlags().StringVar(&ValidatorPrefix, "bech-validator-prefix", "", "Bech32 validator prefix")
