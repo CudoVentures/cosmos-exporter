@@ -289,23 +289,23 @@ type poolResponse struct {
 		Address    string `json:"address"`
 		ID         string `json:"id"`
 		PoolParams struct {
-			SwapFee                  string      `json:"swapFee"`
-			ExitFee                  string      `json:"exitFee"`
-			SmoothWeightChangeParams interface{} `json:"smoothWeightChangeParams"`
-		} `json:"poolParams"`
+			SwapFee                  string      `json:"swap_fee"`
+			ExitFee                  string      `json:"exit_fee"`
+			SmoothWeightChangeParams interface{} `json:"smooth_weight_change_params"`
+		} `json:"pool_params"`
 		FuturePoolGovernor string `json:"future_pool_governor"`
 		TotalShares        struct {
 			Denom  string `json:"denom"`
 			Amount string `json:"amount"`
-		} `json:"totalShares"`
+		} `json:"total_shares"`
 		PoolAssets []struct {
 			Token struct {
 				Denom  string `json:"denom"`
 				Amount string `json:"amount"`
 			} `json:"token"`
 			Weight string `json:"weight"`
-		} `json:"poolAssets"`
-		TotalWeight string `json:"totalWeight"`
+		} `json:"pool_assets"`
+		TotalWeight string `json:"total_weight"`
 	} `json:"pool"`
 }
 
